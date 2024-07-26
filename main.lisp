@@ -1,6 +1,6 @@
 ;; NOTE: Binary was invalid when compiling with sb-ext:save-lisp-and-die but works with
-;; (setq uiop:*image-entry-point* #'slickposes:main :compression 10)
-;; (uiop:dump-image "slickposes" :executable t))
+;; (setq uiop:*image-entry-point* #'slickposes:main)
+;; (uiop:dump-image "slickposes" :executable t :compression 10)
 
 (eval-when (:load-toplevel :compile-toplevel :execute)
   (ql:quickload 'clingon :silent t)
@@ -20,6 +20,15 @@
 (defvar current-duration-seconds 0.0d0)
 (defvar advancement-paused-p nil)
 (defvar source-directory ".")
+
+(defun nshuffle (sequence)
+  (declare (type list sequence))
+  (declare (optimize (speed 3) (safety 0)))
+  (setf *random-state* (make-random-state t))
+  (loop for i from (length sequence) downto 2
+        do (rotatef (elt sequence (random i))
+                    (elt sequence (1- i))))
+  sequence)
 
 (defun get-image-files-in-path (path-string)
   (declare (optimize (speed 3) (safety 0)))
@@ -41,25 +50,32 @@
         (setf (adw:window-content window) box)
 
         (let* ((header-bar (adw:make-header-bar))
-               (images (mapcar #'(lambda (s)
-                                   (declare (optimize (speed 3) (safety 0)))
-                                   (declare (type pathname s))
-                                   (gtk4:make-image :filename (uiop:unix-namestring s)))
-                               (get-image-files-in-path source-directory)))
+               (image-files (get-image-files-in-path source-directory))
                (button-box (make-box :orientation +orientation-horizontal+
                                      :spacing 4))
                (skip-button (make-button :label "Skip"))
                (pause-switch-row (adw:make-switch-row))
-               (progress-bar (make-progress-bar)) ; TODO: Hook up progress bar
+               (progress-bar (make-progress-bar))
                (image-carousel (adw:make-carousel))
                (carousel-indicator (adw:make-carousel-indicator-dots))
                (scroll-to-next-image
                  (lambda ()
-                   (unless (or (null images) (null (cdr images)))
-                     (setf images (cdr images))
-                     (when (null (cdr images))
-                       (gtk4:widget-remove-css-class skip-button "suggested-action"))
-                     (adw:carousel-scroll-to image-carousel (car images) t)))))
+                   (unless (null image-files)
+                     (let ((image (gtk4:make-image :filename (pop image-files))))
+                       (setf (widget-hexpand-p image) t
+                             (widget-vexpand-p image) t)
+                       (adw:carousel-append image-carousel image)
+                       (sleep 0.1) ; Since the run-in-main-event-loop macro is broken, wait a bit after adding image to make sure the subsequent scroll-to goes through
+                       (adw:carousel-scroll-to image-carousel image t))
+                     (when (null image-files)
+                       (gtk4:widget-remove-css-class skip-button "suggested-action"))))))
+
+          (nshuffle image-files)
+          (setf image-files
+                (mapcar
+                 #'(lambda (p)
+                     (uiop:unix-namestring p))
+                 image-files))
 
           (connect skip-button "clicked"
                    (lambda (button)
@@ -73,21 +89,17 @@
 
           (bt:make-thread
            (lambda ()
-             (loop while (and (not (null images)) (not (null (cdr images))))
-                   do (let ()
-()                        (declare (optimize (speed 3) (safety 0)))
-                        (declare (type double-float current-duration-seconds auto-advance-seconds))
-                        (loop while (< current-duration-seconds auto-advance-seconds)
-                              do (progn (sleep 0.05)
-                                        (if advancement-paused-p
-                                            (progress-bar-pulse progress-bar)
-                                            (setf current-duration-seconds (+ current-duration-seconds 0.10)
-                                                  (progress-bar-fraction progress-bar) (/ current-duration-seconds auto-advance-seconds)))))
-                        (funcall scroll-to-next-image)
-                        (setf current-duration-seconds 0.0d0)))))
-
-          (setf (adw:carousel-indicator-dots-carousel carousel-indicator) image-carousel
-                (adw:carousel-interactive-p image-carousel) nil)
+             (declare (optimize (speed 3) (safety 0)))
+             (declare (type double-float current-duration-seconds auto-advance-seconds))
+             (loop while (not (null image-files))
+                   do (loop while (< current-duration-seconds auto-advance-seconds)
+                            do (progn (sleep 0.05)
+                                      (if advancement-paused-p
+                                          (progress-bar-pulse progress-bar)
+                                          (setf current-duration-seconds (+ current-duration-seconds 0.05d0)
+                                                (progress-bar-fraction progress-bar) (/ current-duration-seconds auto-advance-seconds)))))
+                      (funcall scroll-to-next-image)
+                      (setf current-duration-seconds 0.0d0))))
 
           (setf (adw:preferences-row-title pause-switch-row) "Pause")
 
@@ -101,11 +113,16 @@
           (setf (adw:header-bar-title-widget header-bar)
                 (adw:make-window-title :title "slickposes" :subtitle ""))
 
-          (mapcar #'(lambda (i)
-                      (setf (widget-hexpand-p i) t
-                            (widget-vexpand-p i) t)
-                      (adw:carousel-append image-carousel i))
-                  images)
+          (setf (adw:carousel-interactive-p image-carousel) nil)
+
+          (setf (adw:carousel-indicator-dots-carousel carousel-indicator) image-carousel)
+
+          (unless (null image-files)
+            (let ((i (gtk4:make-image :filename (pop image-files))))
+              (setf (widget-hexpand-p i) t
+                    (widget-vexpand-p i) t)
+              (adw:carousel-append image-carousel i)
+              (adw:carousel-scroll-to image-carousel i t)))
 
           (box-append button-box skip-button)
 
