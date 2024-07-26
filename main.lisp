@@ -1,6 +1,6 @@
 ;; NOTE: Binary was invalid when compiling with sb-ext:save-lisp-and-die but works with
-;; (setq uiop:*image-entry-point* #'fastposes:main :compression 10)
-;; (uiop:dump-image "fastposes" :executable t))
+;; (setq uiop:*image-entry-point* #'slickposes:main :compression 10)
+;; (uiop:dump-image "slickposes" :executable t))
 
 (eval-when (:load-toplevel :compile-toplevel :execute)
   (ql:quickload 'clingon :silent t)
@@ -10,13 +10,14 @@
   (ql:quickload 'cl-gtk4.adw :silent t))
 
 
-(defpackage fastposes
+(defpackage slickposes
   (:use #:cl #:gtk4)
   (:export #:main))
 
-(in-package #:fastposes)
+(in-package #:slickposes)
 
-(defvar auto-advance-seconds 60)
+(defvar auto-advance-seconds 60.0d0)
+(defvar current-duration-seconds 0.0d0)
 (defvar advancement-paused-p nil)
 (defvar source-directory ".")
 
@@ -29,8 +30,8 @@
                     (str:ends-with-p ".png" (uiop:unix-namestring s) :ignore-case str:*ignore-case*)))
                  (uiop:directory-files path-string)))
 
-(define-application (:name fastposes
-                     :id "org.harvlin.fastposes")
+(define-application (:name slickposes
+                     :id "org.harvlin.slickposes")
   (define-main-window (window (adw:make-application-window :app *application*))
     (let ()
 
@@ -53,15 +54,18 @@
                (image-carousel (adw:make-carousel))
                (carousel-indicator (adw:make-carousel-indicator-dots))
                (scroll-to-next-image
-                 (lambda (button)
-                   (declare (ignore button))
+                 (lambda ()
                    (unless (or (null images) (null (cdr images)))
                      (setf images (cdr images))
                      (when (null (cdr images))
                        (gtk4:widget-remove-css-class skip-button "suggested-action"))
                      (adw:carousel-scroll-to image-carousel (car images) t)))))
 
-          (connect skip-button "clicked" scroll-to-next-image)
+          (connect skip-button "clicked"
+                   (lambda (button)
+                     (declare (ignore button))
+                     (funcall scroll-to-next-image)
+                     (setf current-duration-seconds 0.0d0)))
           (connect pause-switch-row "notify"
                    (lambda (switch param)
                      (declare (ignore param))
@@ -69,16 +73,18 @@
 
           (bt:make-thread
            (lambda ()
-             (loop while (not (and (null images) (null (cdr images))))
-                   do (let ((curr-duration 0.0d0))
-                        (loop while (< curr-duration auto-advance-seconds)
+             (loop while (and (not (null images)) (not (null (cdr images))))
+                   do (let ()
+()                        (declare (optimize (speed 3) (safety 0)))
+                        (declare (type double-float current-duration-seconds auto-advance-seconds))
+                        (loop while (< current-duration-seconds auto-advance-seconds)
                               do (progn (sleep 0.05)
                                         (if advancement-paused-p
                                             (progress-bar-pulse progress-bar)
-                                            (setf curr-duration (+ curr-duration 0.10)
-                                                  (progress-bar-fraction progress-bar) (/ curr-duration auto-advance-seconds)))))
-                        (funcall scroll-to-next-image nil)
-                        (setf curr-duration 0)))))
+                                            (setf current-duration-seconds (+ current-duration-seconds 0.10)
+                                                  (progress-bar-fraction progress-bar) (/ current-duration-seconds auto-advance-seconds)))))
+                        (funcall scroll-to-next-image)
+                        (setf current-duration-seconds 0.0d0)))))
 
           (setf (adw:carousel-indicator-dots-carousel carousel-indicator) image-carousel
                 (adw:carousel-interactive-p image-carousel) nil)
@@ -93,7 +99,7 @@
                 (gtk:widget-hexpand-p skip-button) t)
 
           (setf (adw:header-bar-title-widget header-bar)
-                (adw:make-window-title :title "fastposes" :subtitle ""))
+                (adw:make-window-title :title "slickposes" :subtitle ""))
 
           (mapcar #'(lambda (i)
                       (setf (widget-hexpand-p i) t
@@ -128,17 +134,17 @@
   "Handler function for the main cli command"
   (let ((free-args (clingon:command-arguments cmd))
         (duration (clingon:getopt cmd :duration)))
-    (setf auto-advance-seconds duration
+    (setf auto-advance-seconds (* duration 1.0d0)
           source-directory (if (not (null free-args)) (first free-args) (string "."))))
   (unless (adw:initialized-p)
     (adw:init))
-  (fastposes))
+  (slickposes))
 
 (defun cli/command ()
   "The main cli command."
   (clingon:make-command
-   :name "fastposes"
-   :description "A simple GTK based figure drawing program"
+   :name "slickposes"
+   :description "A simple GTK based figure drawing program written in Common Lisp"
    :version "0.1.0"
    :authors '("Harvey Lin")
    :license "LGPLv3"
