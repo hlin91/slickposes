@@ -1,5 +1,5 @@
 ;; NOTE: Binary was invalid when compiling with sb-ext:save-lisp-and-die but works with
-;; (setq uiop:*image-entry-point* #'fastposes:main)
+;; (setq uiop:*image-entry-point* #'fastposes:main :compression 10)
 ;; (uiop:dump-image "fastposes" :executable t))
 
 (eval-when (:load-toplevel :compile-toplevel :execute)
@@ -147,5 +147,3 @@
 
 (defun main ()
   (clingon:run (cli/command)))
-
-(main)
