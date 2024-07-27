@@ -65,7 +65,7 @@
                        (setf (widget-hexpand-p image) t
                              (widget-vexpand-p image) t)
                        (adw:carousel-append image-carousel image)
-                       (sleep 0.1) ; Since the run-in-main-event-loop macro is broken, wait a bit after adding image to make sure the subsequent scroll-to goes through
+                       (sleep 0.1) ; Wait a bit to let the carousel update
                        (adw:carousel-scroll-to image-carousel image t))
                      (when (null image-files)
                        (gtk4:widget-remove-css-class skip-button "suggested-action"))))))
@@ -95,10 +95,11 @@
                    do (loop while (< current-duration-seconds auto-advance-seconds)
                             do (progn (sleep 0.05)
                                       (if advancement-paused-p
-                                          (progress-bar-pulse progress-bar)
-                                          (setf current-duration-seconds (+ current-duration-seconds 0.05d0)
-                                                (progress-bar-fraction progress-bar) (/ current-duration-seconds auto-advance-seconds)))))
-                      (funcall scroll-to-next-image)
+                                          (gtk4:run-in-main-event-loop () (progress-bar-pulse progress-bar))
+                                          (gtk4:run-in-main-event-loop ()
+                                            (setf current-duration-seconds (+ current-duration-seconds 0.05d0)
+                                                  (progress-bar-fraction progress-bar) (/ current-duration-seconds auto-advance-seconds))))))
+                      (gtk4:run-in-main-event-loop () (funcall scroll-to-next-image))
                       (setf current-duration-seconds 0.0d0))))
 
           (setf (adw:preferences-row-title pause-switch-row) "Pause")
